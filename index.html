@@ -217,6 +217,8 @@ const SCENARIO_META = {
   9: { title: 'Escenario 9: El Agujero Negro del ATM (Caja Chica)', short: 'ATM · Caja Chica', sub: 'Cajero · −$500.00' },
   10: { title: 'Escenario 10: Recepción de Facturas (Accounts Payable)', short: 'Factura por Pagar', sub: 'CEMEX #899 · $3,200' },
   11: { title: 'Escenario 11: Alerta de Variación de Costos (Price Hike)', short: 'Alerta de Precio', sub: 'GEICO · +30%' },
+  12: { title: 'Reporte: clientes que te deben', short: 'Por cobrar', sub: 'Aguinaldos · ver en la app' },
+  13: { title: 'Reporte: ventas y ganancias', short: 'Ventas y margen', sub: 'Productos · ver en la app' },
 };
 
 
@@ -796,6 +798,14 @@ const SCENARIOS = {
       draft: { to: 'service@geico.com', subject: 'Póliza comercial · aumento de $345 a $450',
         body: `Hola, buen día:\n\nEste mes nos cobraron $450.00 por la póliza de nuestras camionetas, cuando veníamos pagando $345.00 cada mes. No hicimos ningún cambio en la póliza.\n\n¿Me pueden explicar el motivo del incremento?\n\nGracias,\n${esc(state.account.name)} · ${esc(state.account.business)}` } });
   },
+
+  async 12(c) {
+    await c.agent({ type: 'report', report: 'cobranza', text: REPORTS.cobranza.chat }, 700);
+  },
+
+  async 13(c) {
+    await c.agent({ type: 'report', report: 'margen', text: REPORTS.margen.chat }, 700);
+  },
 };
 
 async function runScenario(key) {
@@ -1366,11 +1376,12 @@ async function playOnboarding(c, token) {
   await armReply(token, 'plaid', { msgId: card.id });
   await say(c, banksMessage(ob.banksTotal));
   await say(c, analysisMessage(ob));
-  if (ob.source !== 'zero') {
-    await say(c, { type: 'report', report: 'cobranza', text: REPORTS.cobranza.chat });
-    await say(c, { type: 'report', report: 'margen', text: REPORTS.margen.chat });
-  }
-  await say(c, `Ya quedó el alta de ${esc(state.account.business)}. A la izquierda tienes los 11 escenarios: recibos, notas de voz, facturas y alertas.`);
+  const sample = ob.source === 'zero'
+    ? 'Aún no hay historial. Te muestro los dos reportes de ejemplo para que veas cómo llegan.\n\n'
+    : '';
+  await say(c, { type: 'report', report: 'cobranza', text: sample + REPORTS.cobranza.chat });
+  await say(c, { type: 'report', report: 'margen', text: REPORTS.margen.chat });
+  await say(c, `Ya quedó el alta de ${esc(state.account.business)}. En el chat quedaron los reportes de cobranza y de margen. A la izquierda también están, junto con los otros escenarios.`);
 }
 
 async function runOnboarding() {
