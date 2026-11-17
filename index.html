@@ -247,10 +247,12 @@ function renderPhone() {
           <button type="button" id="composer-send" class="w-11 h-11 rounded-full bg-[#00A884] grid place-items-center text-white" aria-label="Micrófono">${icon('mic', 'w-5 h-5')}</button>
         </div>
         <div id="plaid-sheet" class="plaid-sheet" hidden></div>
+        <div id="report-sheet" class="plaid-sheet" hidden></div>
       </div>
     </div>`;
   renderChat();
   renderPlaid();
+  renderReport();
 }
 
 function renderChat() {
@@ -521,6 +523,19 @@ const MESSAGE_RENDERERS = {
       </div>
       <button type="button" class="plaid-open" data-action="open-plaid">Abrir enlace</button>
     </div>`, 'bubble-card'),
+  report: (m) => {
+    const spec = REPORTS[m.report];
+    return bubble(m, `
+    <p class="msg-body-pre">${m.text}</p>
+    <div class="plaid-card">
+      <div class="plaid-card-bar"></div>
+      <div class="plaid-card-body">
+        <p class="plaid-brand">${esc(spec ? spec.title : 'Reporte')}</p>
+        <p class="plaid-sub">Serbell · se abre en la app</p>
+      </div>
+      <button type="button" class="plaid-open" data-action="open-report" data-report="${esc(m.report)}">Ver en la app</button>
+    </div>`, 'bubble-card');
+  },
 };
 
 const renderMessage = (m) => (MESSAGE_RENDERERS[m.type] || MESSAGE_RENDERERS.text)(m);
@@ -811,6 +826,7 @@ const state = {
   runToken: 0,
   reply: null,
   plaid: { open: false, phase: 'pick' },
+  report: { open: false, id: null },
   onboarding: { done: false, source: null, dateChoice: null, customDate: '', confirmed: {}, banksTotal: 24620.15 },
   _said: false,
 };
@@ -906,6 +922,28 @@ const BOOKS = {
   ap: 6180,
   siteone: 2400,
   oak: 4200,
+};
+// Same AR split already used by the books. Shown only inside the app, not in the chat.
+const AR_CLIENTS = [
+  { name: 'Oak Street', detail: 'Instalación', amount: 4200 },
+  { name: 'HOA Barton Creek', detail: 'Mantenimiento', amount: 2800 },
+  { name: 'Casa León', detail: 'Riego', amount: 1450 },
+];
+// A slice of products, not the full P&L. Low margins are the ones worth raising.
+const MARGIN_PRODUCTS = [
+  { name: 'Mantillo y plantas', sales: 18640, margin: 18 },
+  { name: 'Instalación de riego', sales: 24100, margin: 22 },
+  { name: 'Poda', sales: 12850, margin: 41 },
+];
+const REPORTS = {
+  cobranza: {
+    title: 'Clientes que te deben',
+    chat: 'Este es el reporte de los clientes que te deben. Te sugiero que cobres, para que tengas más caja para los aguinaldos.\n\nSon datos de tus clientes: no los pongo en este chat. Ábrelos en la app.',
+  },
+  margen: {
+    title: 'Ventas y ganancias',
+    chat: 'Este es el reporte de tus ventas y ganancias. Puedes mejorar aumentando el margen de estos productos.\n\nEl margen por producto tampoco va en el chat. Ábrelo en la app.',
+  },
 };
 const CANON_BANKS_CENTS = 2462015;
 const SAVINGS_CENTS = 620000;
@@ -1135,6 +1173,59 @@ function verifyPrompt(step, amount, ob) {
   return `En ${where}, ${periodPhrase(ob)}, ${noun} suman **${usd(amount)}**.\n\n¿Está bien?`;
 }
 
+function openReport(el) {
+  const id = el && el.dataset ? el.dataset.report : '';
+  if (!REPORTS[id]) return;
+  state.report = { open: true, id };
+  renderReport();
+}
+
+function closeReport() {
+  state.report = { open: false, id: null };
+  renderReport();
+}
+
+function renderReport() {
+  const host = $('#report-sheet');
+  if (!host) return;
+  const id = state.report && state.report.open ? state.report.id : '';
+  const spec = REPORTS[id];
+  if (!spec) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  host.hidden = false;
+  const body = id === 'cobranza' ? cobranzaSheet() : margenSheet();
+  host.innerHTML = `
+    <div class="plaid-urlbar"><span>Serbell</span><button type="button" class="plaid-x" data-action="report-close">Cerrar</button></div>
+    <div class="plaid-body">
+      <p class="plaid-brand">App</p>
+      <h2 class="plaid-h">${esc(spec.title)}</h2>
+      ${body}
+      <button type="button" class="plaid-go" data-action="report-close">Volver a WhatsApp</button>
+    </div>`;
+}
+
+function cobranzaSheet() {
+  const rows = AR_CLIENTS.map((r) =>
+    `<div class="plaid-row"><span>${esc(r.name)}<span class="block text-[11px] font-medium text-[#94a3b8]">${esc(r.detail)}</span></span><span class="plaid-amt">${usd(r.amount)}</span></div>`
+  ).join('');
+  return `<p class="plaid-p">Te sugiero cobrarlos para tener más caja para los aguinaldos. Serbell no cobra: el pago lo haces tú.</p>
+    <div class="plaid-list">${rows}<div class="plaid-row"><span>Por cobrar</span><span class="plaid-amt">${usd(BOOKS.ar)}</span></div></div>
+    <p class="plaid-fine">Estos nombres y montos se quedan en la app. El chat solo tiene el enlace.</p>`;
+}
+
+function margenSheet() {
+  const rows = MARGIN_PRODUCTS.map((r) => {
+    const low = r.margin < 30;
+    return `<div class="plaid-row"><span>${esc(r.name)}<span class="block text-[11px] font-medium text-[#94a3b8]">Ventas ${usd(r.sales)}</span></span><span class="plaid-amt ${low ? 'text-amber-300' : ''}">${r.margin}%</span></div>`;
+  }).join('');
+  return `<p class="plaid-p">Puedes mejorar subiendo el margen de mantillo y plantas, y el de la instalación de riego. La poda ya va más holgada.</p>
+    <div class="plaid-list">${rows}</div>
+    <p class="plaid-fine">El margen por producto se queda en la app. El chat solo tiene el enlace.</p>`;
+}
+
 function banksMessage(total) {
   const lines = depositRows(total).map((r) => `• ${r.name} ${mask4(r.mask)} · ${usdCents(r.cents)}`);
   lines.push(`• Amex Business ${mask4('1009')} · tarjeta`);
@@ -1275,6 +1366,10 @@ async function playOnboarding(c, token) {
   await armReply(token, 'plaid', { msgId: card.id });
   await say(c, banksMessage(ob.banksTotal));
   await say(c, analysisMessage(ob));
+  if (ob.source !== 'zero') {
+    await say(c, { type: 'report', report: 'cobranza', text: REPORTS.cobranza.chat });
+    await say(c, { type: 'report', report: 'margen', text: REPORTS.margen.chat });
+  }
   await say(c, `Ya quedó el alta de ${esc(state.account.business)}. A la izquierda tienes los 11 escenarios: recibos, notas de voz, facturas y alertas.`);
 }
 
@@ -1310,6 +1405,7 @@ function resetLive() {
   state.account = { name: '', business: '', email: '' };
   state.onboarding = { done: false, source: null, dateChoice: null, customDate: '', confirmed: {}, banksTotal: 24620.15 };
   state.plaid = { open: false, phase: 'pick' };
+  state.report = { open: false, id: null };
   state.live = freshLive();
   state.live.event = null;
 }
@@ -1323,6 +1419,8 @@ const ACTIONS = {
   'plaid-close': () => closePlaid(),
   'plaid-continue': () => continuePlaid(),
   'plaid-return': () => finishPlaid(),
+  'open-report': (el) => openReport(el),
+  'report-close': () => closeReport(),
 };
 
 document.addEventListener('click', (e) => {
